@@ -56,21 +56,21 @@ obstacle:
     unobstructed: True
     color: 'k'
 
-  - shape: {name: 'rectangle', length: 4.6, width: 1.6, wheelbase: 3}
-    state: [45, 12.25, 3.14, 0]  
-    goal: [10, 12.25, 3.14] 
-    # vel_min: [-1, -1]
-    # vel_max: [1, 1]
-    # goal_threshold: 0.3
-    kinematics: {name: 'diff'}
-    behavior: {name: 'dash'}
-    vel_min: [-3, -3.0]
-    vel_max: [3, 3.0]
-    description: 'car_red.png'
-    # plot:
-    #   show_trail: False
-    #   show_goal: False
-    # color: 'b'
+  # - shape: {name: 'rectangle', length: 4.6, width: 1.6, wheelbase: 3}
+  #   state: [45, 12.25, 3.14, 0]  
+  #   goal: [10, 12.25, 3.14] 
+  #   # vel_min: [-1, -1]
+  #   # vel_max: [1, 1]
+  #   # goal_threshold: 0.3
+  #   kinematics: {name: 'diff'}
+  #   behavior: {name: 'dash'}
+  #   vel_min: [-3, -3.0]
+  #   vel_max: [3, 3.0]
+  #   description: 'car_red.png'
+  #   # plot:
+  #   #   show_trail: False
+  #   #   show_goal: False
+  #   # color: 'b'
 
   
 robot:
