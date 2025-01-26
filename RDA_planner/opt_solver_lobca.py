@@ -18,14 +18,14 @@ class opt_solver:
         self.obstacle_list = obstacle_list
         self.iter_num = iter_num
         self.dt = step_time
-        self.acce_bound = np.c_[car_tuple.max_acce] * self.dt 
-        self.max_speed = np.c_[self.car_tuple.max_speed]
+        self.acce_bound = np.c_[car_tuple.max_acce] * self.dt # shape: (2, 1) [[1],[0.1]]
+        self.max_speed = np.c_[self.car_tuple.max_speed] # shape: (2, 1) [[10],[1]]
         self.iter_threshold = iter_threshold
 
         # independ variable
-        self.indep_s = cp.Variable((3, receding+1), name='state')
-        self.indep_u = cp.Variable((2, receding), name='vel')
-        self.gamma_dis = cp.Variable((receding, ), nonneg=True)
+        self.indep_s = cp.Variable((3, receding+1), name='state') # (x, y, phi)
+        self.indep_u = cp.Variable((2, receding), name='vel') # (v, psi)
+        self.gamma_dis = cp.Variable((receding, ), nonneg=True) # distance to obstacle >= 0
 
         self.update_obstecles(obstacle_list)
 
@@ -35,19 +35,30 @@ class opt_solver:
     def update_obstecles(self, obstacle_list):
 
         self.obstacle_list = obstacle_list
-
-        self.indep_v_list = [cp.Variable((1, self.T+1)) for obs in obstacle_list ]
-        self.indep_w_list = [cp.Variable((self.T+1, 2)) for obs in obstacle_list ]
-        self.indep_lam_list = [ cp.Variable((obs.A.shape[0], self.T+1)) for obs in obstacle_list ]
-        self.indep_mu_list = [ cp.Variable((self.car_tuple.G.shape[0], self.T+1)) for obs in obstacle_list ]
+        self.indep_v_list = [cp.Variable((1, self.T+1)) for obs in obstacle_list ] # shape (1, T+1) for each obstacle
+        self.indep_w_list = [cp.Variable((self.T+1, 2)) for obs in obstacle_list ] # shape (T+1, 2) for each obstacle
+        self.indep_lam_list = [ cp.Variable((obs.A.shape[0], self.T+1)) for obs in obstacle_list ] # 避障约束的lambda
+        self.indep_mu_list = [ cp.Variable((self.car_tuple.G.shape[0], self.T+1)) for obs in obstacle_list ] # 避障约束的mu
 
         self.nom_lam_list = [ np.ones((obs.A.shape[0], self.T+1)) for obs in obstacle_list ]
         self.nom_mu_list = [ np.ones((self.car_tuple.G.shape[0], self.T+1)) for obs in obstacle_list ]
         self.nom_y_list = [ np.zeros((self.T+1, 2)) for obs in obstacle_list] 
 
     def iterative_solve(self, state_pre_array, cur_vel_array, ref_traj_list, ref_speed, algorithm, **kwargs):
+        """_summary_
+
+        Args:
+            state_pre_array (_type_): 预测状态变量的初始值，我的理解，可以当做下一次迭代的初始值
+            cur_vel_array (_type_): 控制变量的初始值，我的理解，可以当做下一次迭代的初始值
+            ref_traj_list (_type_): 参考轨迹
+            ref_speed (_type_): 参考速度
+            algorithm (_type_): _description_
+
+        Returns:
+            _type_: _description_
+        """
         
-        for i in range(self.iter_num):
+        for i in range(self.iter_num): # 这里迭代次数不需要太多，因为本来求解出来的就是最优解，多用两次只是初始值不同而已
 
             start_time = time.time()
 
@@ -115,7 +126,7 @@ class opt_solver:
         cost += wu * cp.sum_squares(self.indep_u[0, 0:self.T-1] - ref_speed)
         cost += wut * cp.square(self.indep_u[0, self.T-1] - ref_speed) # cost speed at T
         # cost += self.indep_s - ref_st1
-        ref_s = np.hstack(ref_state)
+        ref_s = np.hstack(ref_state) # shape (3, T+1)
         
         cost += ws * cp.sum_squares( self.indep_s[:, 0:self.T-1] - ref_s[:, 0:self.T-1])
         cost += wst * cp.sum_squares( self.indep_s[:, self.T-1] - ref_s[:, self.T-1])
@@ -156,11 +167,11 @@ class opt_solver:
 
         ## obstacle constraints interior
         for obs_index, obs in enumerate(self.obstacle_list): 
-            indep_v_array = self.indep_v_list[obs_index]
-            indep_w_array = self.indep_w_list[obs_index]
-            indep_lam_array = self.indep_lam_list[obs_index]
-            nom_lam_array = self.nom_lam_list[obs_index]
-            indep_mu_array = self.indep_mu_list[obs_index]
+            indep_v_array = self.indep_v_list[obs_index] # shape (1, T+1)
+            indep_w_array = self.indep_w_list[obs_index] # shape (T+1, 2)
+            indep_lam_array = self.indep_lam_list[obs_index] # shape (obs.A.shape[0], T+1)
+            nom_lam_array = self.nom_lam_list[obs_index] # ones (obs.A.shape[0], T+1) 泰勒展开点
+            indep_mu_array = self.indep_mu_list[obs_index] # shape (self.car_tuple.G.shape[0], T+1)
 
             Talor_lam_A_t_list = []
             Talor_lam_A_R_list = []
@@ -184,11 +195,12 @@ class opt_solver:
                 Talor_lam_A_t_list.append(Talor_lam_A_t)
                 Talor_lam_A_R_list.append(Talor_lam_A_R)
 
-            constraints += [ cp.diag(indep_v_array - (indep_lam_array.T @ obs.b) - (indep_mu_array.T @ self.car_tuple.h))[1:] >= self.gamma_dis]
-            constraints += [ cp.constraints.zero.Zero(indep_mu_array.T @ self.car_tuple.G + indep_w_array)  ]
-            constraints += [ cp.norm( obs.A.T @ indep_lam_array, axis=0) <= 1 ]
-            constraints += [ self.cone_cp_array(-indep_lam_array, obs.cone_type) ]
-            constraints += [ self.cone_cp_array(-indep_mu_array, self.car_tuple.cone_type) ]
+            
+            constraints += [ cp.diag(indep_v_array - (indep_lam_array.T @ obs.b) - (indep_mu_array.T @ self.car_tuple.h))[1:] >= self.gamma_dis] # 确定了 indep_v_array = lambda.T * obs.A * p
+            constraints += [ cp.constraints.zero.Zero(indep_mu_array.T @ self.car_tuple.G + indep_w_array)  ] # indep_w_array = lambda * obs.A * R
+            constraints += [ cp.norm( obs.A.T @ indep_lam_array, axis=0) <= 1 ] # 确定
+            constraints += [ self.cone_cp_array(-indep_lam_array, obs.cone_type) ] # lambda >= 0
+            constraints += [ self.cone_cp_array(-indep_mu_array, self.car_tuple.cone_type) ] # mu >= 0
             
             Talor_lam_A_t_array = cp.hstack(Talor_lam_A_t_list)
             Talor_lam_A_R_array = cp.vstack(Talor_lam_A_R_list)

@@ -94,7 +94,7 @@ class MPC:
         self.receding = receding
         self.dt = sample_time
 
-        self.cur_vel_array = kwargs.get("init_vel", np.zeros((2, receding)))
+        self.cur_vel_array = kwargs.get("init_vel", np.zeros((2, receding))) # shape: (2, receding)
 
         self.state = np.zeros((3, 1))
 
@@ -137,6 +137,10 @@ class MPC:
         ref_speed: the reference speed, scalar value
         obstacle_list: a list of obstacle
             obstacle: (center, radius, vertex, cone_type, velocity)
+        kwargs:
+            ws: the weight for the state difference cost
+            wst: the weight for the target state difference cost
+            max_sd: the maximum safety distance
         """
  
         if np.shape(state)[0] > 3: state = state[0:3]
@@ -152,7 +156,7 @@ class MPC:
 
         state_pre_array, ref_traj_list, self.cur_index = self.pre_process(
             state, cur_ref_path, self.cur_index, ref_speed, **kwargs
-        )
+        ) # 按照当前状态和参考路径，预测未来状态和参考路径，选取最近点之后的receiding个点作为参考路径
 
         if not self.rda_obstacle:
             rda_obs_list = self.convert_rda_obstacle(
@@ -201,13 +205,13 @@ class MPC:
         rda_obs_list = []
 
         for obs in obstacle_list:
-            if obs.cone_type == "norm2":
+            if obs.cone_type == "norm2": # circle
                 A, b = self.convert_inequal_circle(obs.center, obs.radius, obs.velocity)
 
                 rda_obs = rdaobs(A, b, obs.cone_type, obs.center, None)
                 rda_obs_list.append(rda_obs)
 
-            elif obs.cone_type == "Rpositive":
+            elif obs.cone_type == "Rpositive": # polygon
                 A, b = self.convert_inequal_polygon(obs.vertex, obs.velocity)
 
                 rda_obs = rdaobs(A, b, obs.cone_type, None, obs.vertex)
